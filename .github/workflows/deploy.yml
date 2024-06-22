@@ -53,15 +53,6 @@ jobs:
         if: steps.check-ecr-image.outputs.image_exists != '0'
         uses: aws-actions/amazon-ecr-login@v1
 
-      - name: Build, tag, and push Docker image to Amazon ECR
-        if: steps.check-ecr-image.outputs.image_exists != '0'
-        env:
-          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
-          IMAGE_TAG: latest
-        run: |
-          docker build -t $ECR_REPOSITORY:$IMAGE_TAG .
-          docker push $ECR_REPOSITORY:$IMAGE_TAG
-
       - name: Deploy to EKS
         env:
           ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
