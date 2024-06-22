@@ -17,41 +17,49 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
 
-      # Step 1: Create EKS Cluster (Runs only if cluster does not exist)
-      - name: Create EKS Cluster
+      # Step 1: Install eksctl
+      - name: Install eksctl
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y awscli
+          curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
+          sudo mv /tmp/eksctl /usr/local/bin
+
+      # Step 2: Check if EKS cluster exists; create if not
+      - name: Check and create EKS cluster
         id: create-eks
         run: |
           eksctl get cluster --name ${{ secrets.EKS_CLUSTER_NAME }} --region ${{ secrets.AWS_REGION }} || {
             eksctl create cluster --name ${{ secrets.EKS_CLUSTER_NAME }} --region ${{ secrets.AWS_REGION }} --nodegroup-name linux-nodes --node-type t2.micro --nodes 2 --nodes-min 1 --nodes-max 3 --managed
           }
 
-      # Step 2: Configure kubectl (Runs after EKS cluster is created or if already exists)
+      # Step 3: Configure kubectl (Runs after EKS cluster is created or if already exists)
       - name: Configure kubectl
-        if: steps.create-eks.outputs.status == 'success'  # Only runs if EKS cluster was created in the previous step
+        if: steps.create-eks.outputs.status == 'success'  # Only runs if EKS cluster was created or already exists
         run: |
           aws eks --region ${{ secrets.AWS_REGION }} update-kubeconfig --name ${{ secrets.EKS_CLUSTER_NAME }}
 
-      # Step 3: Install kubectl (Runs after kubectl is configured)
+      # Step 4: Install kubectl (Runs after kubectl is configured)
       - name: Install kubectl
-        if: steps.create-eks.outputs.status == 'success'  # Only runs if EKS cluster was created in the previous step
+        if: steps.create-eks.outputs.status == 'success'  # Only runs if EKS cluster was created or already exists
         run: |
           curl -LO "https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl"
           chmod +x ./kubectl
           sudo mv ./kubectl /usr/local/bin/kubectl
 
-      # Step 4: Check if Docker image exists in ECR
+      # Step 5: Check if Docker image exists in ECR
       - name: Check if Docker image exists in ECR
         id: check-ecr-image
         run: |
           aws ecr describe-images --repository-name webapp --image-ids imageTag=latest --region ${{ secrets.AWS_REGION }} > /dev/null 2>&1
           echo "::set-output name=image_exists::$(test $? -eq 0)"
 
-      # Step 5: Login to Amazon ECR (Only if image exists in ECR)
+      # Step 6: Login to Amazon ECR (Only if image exists in ECR)
       - name: Login to Amazon ECR
         if: steps.check-ecr-image.outputs.image_exists != '0'
         uses: aws-actions/amazon-ecr-login@v1
 
-      # Step 6: Deploy to EKS (Runs after login to ECR if needed)
+      # Step 7: Deploy to EKS (Runs after login to ECR if needed)
       - name: Deploy to EKS
         env:
           ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
