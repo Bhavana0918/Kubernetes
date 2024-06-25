@@ -1,4 +1,4 @@
-name: Deploy to EKS
+name: Build and Deploy to EKS
 
 on:
   workflow_dispatch:
@@ -9,16 +9,14 @@ on:
         default: 'no'
 
 jobs:
-  deploy:
+  build_and_deploy:
     runs-on: ubuntu-latest
-    if: github.event.inputs.confirmation == 'yes'
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v2
 
-      - name: List Repository Contents
-        run: ls -R
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v1
 
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v1
@@ -27,42 +25,34 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ secrets.AWS_REGION }}
 
-      - name: Install eksctl
-        run: |
-          curl --silent --location "https://github.com/weaveworks/eksctl/releases/latest/download/eksctl_$(uname -s)_amd64.tar.gz" | tar xz -C /tmp
-          sudo mv /tmp/eksctl /usr/local/bin
-
-      - name: Create EKS Cluster
-        run: |
-          eksctl create cluster --name ${{ secrets.EKS_CLUSTER_NAME }} --region ${{ secrets.AWS_REGION }} --nodegroup-name linux-nodes --node-type t2.micro --nodes 2 --nodes-min 1 --nodes-max 3 --managed
-
-      - name: Configure kubectl
-        run: |
-          aws eks --region ${{ secrets.AWS_REGION }} update-kubeconfig --name ${{ secrets.EKS_CLUSTER_NAME }}
-
-      - name: Install kubectl
-        run: |
-          curl -LO "https://storage.googleapis.com/kubernetes-release/release/$(curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt)/bin/linux/amd64/kubectl"
-          chmod +x ./kubectl
-          sudo mv ./kubectl /usr/local/bin/kubectl
-
-      - name: Check if Docker image exists in ECR
-        id: check-ecr-image
-        run: |
-          aws ecr describe-images --repository-name webapp --image-ids imageTag=082b0524efe2ce8a19cec7324d3cb4d5a0574d9f --region ${{ secrets.AWS_REGION }} > /dev/null 2>&1
-          echo "::set-output name=image_exists::$(test $? -eq 0)"
-
-      - name: Login to Amazon ECR
-        if: steps.check-ecr-image.outputs.image_exists != '0'
+      - name: Log in to Amazon ECR
+        id: login-ecr
         uses: aws-actions/amazon-ecr-login@v1
 
-      - name: Deploy to EKS
+      - name: Build, tag, and push Docker image
         env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
           ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
-          IMAGE_TAG: latest
+          IMAGE_TAG: ${{ github.sha }}
+        working-directory: mywebsite  # Adjust to match your project structure
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
+      - name: Configure kubectl
+        uses: aws-actions/eks-eksctl@v1
+        with:
+          cluster-name: ${{ secrets.EKS_CLUSTER_NAME }}
+          region: ${{ secrets.AWS_REGION }}
+
+      - name: Update deployment.yml with new image
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+          IMAGE_TAG: ${{ github.sha }}
+        run: |
+          sed -i 's|image: .*|image: '$ECR_REGISTRY'/'$ECR_REPOSITORY':'$IMAGE_TAG'|' mywebsite/deployment.yml
+
+      - name: Deploy to EKS
         run: |
           kubectl apply -f mywebsite/deployment.yml
-          kubectl apply -f mywebsite/service.yml
-
-
-          kubectl apply -f mywebsite/service.yml
