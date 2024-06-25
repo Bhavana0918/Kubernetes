@@ -5,7 +5,7 @@ metadata:
   labels:
     app: mywebsite
 spec:
-  replicas: 2  
+  replicas: 2
   selector:
     matchLabels:
       app: mywebsite
@@ -16,6 +16,6 @@ spec:
     spec:
       containers:
         - name: mywebsite
-          image: 122238031788.dkr.ecr.ap-south-1.amazonaws.com/webapp:latest 
+          image: REPLACE_WITH_IMAGE_URI  # This will be replaced dynamically
           ports:
-            - containerPort: 8080  
+            - containerPort: 8080
