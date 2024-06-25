@@ -19,6 +19,10 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
 
+      - name: Change to mywebsite directory
+        run: cd mywebsite
+        continue-on-error: true
+
       - name: List Repository Contents
         run: ls -R
 
@@ -32,16 +36,20 @@ jobs:
       - name: Build Docker image and Push to ECR
         if: github.event_name == 'push' || github.event.inputs.confirmation == 'yes'
         run: |
-          docker build -t ${{ secrets.ECR_REPOSITORY }}/webapp:${{ github.run_number }} .
-          docker tag ${{ secrets.ECR_REPOSITORY }}/webapp:${{ github.run_number }} ${{ secrets.ECR_REPOSITORY }}/webapp:latest
-          docker push ${{ secrets.ECR_REPOSITORY }}/webapp:${{ github.run_number }}
-          docker push ${{ secrets.ECR_REPOSITORY }}/webapp:latest
+          docker build -t $ECR_REPOSITORY/webapp:${{ github.run_number }} .
+          docker tag $ECR_REPOSITORY/webapp:${{ github.run_number }} $ECR_REPOSITORY/webapp:latest
+          docker push $ECR_REPOSITORY/webapp:${{ github.run_number }}
+          docker push $ECR_REPOSITORY/webapp:latest
         env:
           ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
           AWS_REGION: ${{ secrets.AWS_REGION }}
           AWS_ACCESS_KEY_ID: ${{ secrets.AWS_ACCESS_KEY_ID }}
           AWS_SECRET_ACCESS_KEY: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
 
-      - name: Deployment Skipped (No EKS Configuration)
+      - name: Deployment to Kubernetes (EKS)
         if: github.event_name == 'push' || github.event.inputs.confirmation == 'yes'
-        run: echo "No deployment to EKS configured. Only pushed to ECR."
+        run: |
+          kubectl apply -f deployment.yml
+          kubectl apply -f service.yml
+        env:
+          KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
