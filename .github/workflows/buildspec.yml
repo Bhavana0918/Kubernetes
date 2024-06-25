@@ -1,4 +1,4 @@
-name: Build and Deploy to EKS
+name: Build Docker Image EKS
 
 on:
   push:
