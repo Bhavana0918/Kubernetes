@@ -1,0 +1,84 @@
+name: Deploy to Amazon EKS
+
+on:
+  workflow_dispatch:
+    inputs:
+      deployToEKS:
+        description: 'Deploy to Amazon EKS?'
+        required: true
+        default: 'no'
+
+jobs:
+  deploy_to_eks:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Confirm deployment
+        if: ${{ github.event.inputs.deployToEKS == 'yes' }}
+        run: echo "Proceeding with deployment to Amazon EKS"
+      
+      - name: Checkout code
+        if: ${{ github.event.inputs.deployToEKS == 'yes' }}
+        uses: actions/checkout@v2
+
+      - name: Set up kubectl
+        if: ${{ github.event.inputs.deployToEKS == 'yes' }}
+        uses: azure/kubectl@v1
+        with:
+          version: 'latest'
+          install-location: '/usr/local/bin/kubectl'
+
+      - name: Configure AWS credentials
+        if: ${{ github.event.inputs.deployToEKS == 'yes' }}
+        uses: aws-actions/configure-aws-credentials@v1
+        with:
+          aws-access-key-id: ${{ secrets.AWS_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
+          aws-region: ${{ secrets.AWS_REGION }}
+
+      - name: Check if CloudFormation stack exists
+        if: ${{ github.event.inputs.deployToEKS == 'yes' }}
+        id: check-stack
+        run: |
+          aws cloudformation describe-stacks --stack-name YOUR_STACK_NAME --region ${{ secrets.AWS_REGION }} || echo "stack-not-found"
+
+      - name: Deploy or update CloudFormation stack
+        if: steps.check-stack.outputs.check-stack != 'stack-not-found' && github.event.inputs.deployToEKS == 'yes'
+        run: |
+          aws cloudformation update-stack --stack-name YOUR_STACK_NAME --template-body file://path/to/your/cloudformation-template.yml --parameters ParameterKey=ImageTag,ParameterValue=${{ github.sha }} --region ${{ secrets.AWS_REGION }} --capabilities CAPABILITY_IAM
+        continue-on-error: true  # To continue if the stack update fails due to no changes
+
+      - name: Deploy new CloudFormation stack
+        if: steps.check-stack.outputs.check-stack == 'stack-not-found' && github.event.inputs.deployToEKS == 'yes'
+        run: |
+          aws cloudformation create-stack --stack-name YOUR_STACK_NAME --template-body file://path/to/your/cloudformation-template.yml --parameters ParameterKey=ImageTag,ParameterValue=${{ github.sha }} --region ${{ secrets.AWS_REGION }} --capabilities CAPABILITY_IAM
+        continue-on-error: true  # To continue if the stack creation fails due to the stack already exists
+
+      - name: Log in to Amazon ECR
+        if: ${{ github.event.inputs.deployToEKS == 'yes' }}
+        id: login-ecr
+        uses: aws-actions/amazon-ecr-login@v1
+
+      - name: Build, tag, and push Docker image
+        if: ${{ github.event.inputs.deployToEKS == 'yes' }}
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+          IMAGE_TAG: ${{ github.sha }}
+        working-directory: mywebsite  # Adjusted to match your project structure
+        run: |
+          docker build -t $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG .
+          docker push $ECR_REGISTRY/$ECR_REPOSITORY:$IMAGE_TAG
+
+      - name: Deploy to Amazon EKS
+        if: ${{ github.event.inputs.deployToEKS == 'yes' }}
+        env:
+          ECR_REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+          IMAGE_TAG: ${{ github.sha }}
+          KUBE_CONFIG_DATA: ${{ secrets.KUBE_CONFIG_DATA }}
+        run: |
+          aws eks --region $AWS_REGION update-kubeconfig --name <your-cluster-name>
+          echo $KUBE_CONFIG_DATA | base64 --decode > ./kubeconfig.yaml
+          export KUBECONFIG=./kubeconfig.yaml
+          kubectl apply -f path/to/your/deployment.yml
+          kubectl apply -f path/to/your/service.yml
