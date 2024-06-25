@@ -3,7 +3,7 @@ kind: Deployment
 metadata:
   name: mywebsite-deployment
 spec:
-  replicas: 2  # Adjust the number of replicas as needed
+  replicas: 2  # Number of pods to run
   selector:
     matchLabels:
       app: mywebsite
@@ -13,13 +13,9 @@ spec:
         app: mywebsite
     spec:
       containers:
-        - name: mywebsite
-          image:{{IMAGE_URI}}
+        - name: mywebsite-container
+          image: ${{ secrets.ECR_REGISTRY }}/${{ secrets.ECR_REPOSITORY }}:${{ steps.get-ecr-image-digest.outputs.image_digest }}
           ports:
-            - containerPort: 8080  # Port on which your application listens
-          readinessProbe:
-            httpGet:
-              path: /actuator/health  # Adjust as per your application health endpoint
-              port: 8080
-            initialDelaySeconds: 15
-            periodSeconds: 10
+            - containerPort: 80  # Port your application listens on
+          # Add more configuration as needed, e.g., env variables, volumes, etc.
+
