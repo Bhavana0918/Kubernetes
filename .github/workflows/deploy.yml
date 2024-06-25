@@ -17,6 +17,9 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v2
 
+      - name: List Repository Contents
+        run: ls -R
+
       - name: Configure AWS credentials
         uses: aws-actions/configure-aws-credentials@v1
         with:
@@ -31,15 +34,7 @@ jobs:
 
       - name: Create EKS Cluster
         run: |
-          eksctl create cluster \
-            --name ${{ secrets.EKS_CLUSTER_NAME }} \
-            --region ${{ secrets.AWS_REGION }} \
-            --nodegroup-name linux-nodes \
-            --node-type t2.micro \
-            --nodes 2 \
-            --nodes-min 1 \
-            --nodes-max 3 \
-            --managed
+          eksctl create cluster --name ${{ secrets.EKS_CLUSTER_NAME }} --region ${{ secrets.AWS_REGION }} --nodegroup-name linux-nodes --node-type t2.micro --nodes 2 --nodes-min 1 --nodes-max 3 --managed
 
       - name: Configure kubectl
         run: |
@@ -51,16 +46,22 @@ jobs:
           chmod +x ./kubectl
           sudo mv ./kubectl /usr/local/bin/kubectl
 
-      - name: Fetch Docker image URI from ECR
-        id: fetch-image
+      - name: Check if Docker image exists in ECR
+        id: check-ecr-image
         run: |
-          IMAGE_URI=$(aws ecr describe-images --repository-name ${{ secrets.ECR_REPOSITORY }} --image-ids imageTag=latest --query 'images[0].imageUri' --output text)
-          echo "::set-output name=image_uri::$IMAGE_URI"
+          aws ecr describe-images --repository-name webapp --image-ids imageTag=latest --region ${{ secrets.AWS_REGION }} > /dev/null 2>&1
+          echo "::set-output name=image_exists::$(test $? -eq 0)"
+
+      - name: Login to Amazon ECR
+        if: steps.check-ecr-image.outputs.image_exists != '0'
+        uses: aws-actions/amazon-ecr-login@v1
 
       - name: Deploy to EKS
         env:
-          IMAGE_URI: ${{ steps.fetch-image.outputs.image_uri }}
+          ECR_REPOSITORY: ${{ secrets.ECR_REPOSITORY }}
+          IMAGE_TAG: latest
         run: |
-          sed -i'' -e "s#{{IMAGE_URI}}#${IMAGE_URI}#g" mywebsite/deployment.yml  # Replace placeholder with actual image URI
           kubectl apply -f mywebsite/deployment.yml
+          kubectl apply -f mywebsite/service.yml
+
           kubectl apply -f mywebsite/service.yml
