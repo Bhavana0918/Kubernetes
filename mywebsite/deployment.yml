@@ -1,22 +1,19 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: mywebsite-deployment
-  labels:
-    app: mywebsite
+  name: my-deployment
 spec:
-  replicas: 2  # Number of instances (pods) to run
+  replicas: 2
   selector:
     matchLabels:
-      app: mywebsite
+      app: my-app
   template:
     metadata:
       labels:
-        app: mywebsite
+        app: my-app
     spec:
       containers:
-        - name: mywebsite
-          image: 122238031788.dkr.ecr.ap-south-1.amazonaws.com/webapp:082b0524efe2ce8a19cec7324d3cb4d5a0574d9f
-          ports:
-            - containerPort: 8080  # Port your application listens on
-
+      - name: my-container
+        image: myregistry/myimage:latest  # This line will be replaced by the sed command
+        ports:
+        - containerPort: 80
