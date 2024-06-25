@@ -3,9 +3,10 @@ kind: Service
 metadata:
   name: mywebsite-service
 spec:
-  type: LoadBalancer
-  ports:
-    - port: 80 
-      targetPort: 8080 
   selector:
-    app: mywebsite  
+    app: mywebsite
+  ports:
+    - protocol: TCP
+      port: 80  # Service port
+      targetPort: 8080  # Container port
+  type: LoadBalancer  # Expose the service to external traffic
