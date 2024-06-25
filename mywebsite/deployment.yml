@@ -14,7 +14,7 @@ spec:
     spec:
       containers:
         - name: mywebsite
-          image: REPLACE_WITH_ECR_REGISTRY/REPLACE_WITH_ECR_REPOSITORY:REPLACE_WITH_IMAGE_TAG
+          image:{{IMAGE_URI}}
           ports:
             - containerPort: 8080  # Port on which your application listens
           readinessProbe:
